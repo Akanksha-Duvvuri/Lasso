@@ -1,0 +1,25 @@
+{
+  "name": "snipsearch",
+  "version": "0.1.0",
+  "description": "Snip any part of your screen, read it with a vision model, then copy, summarize, ask, or search your library.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "minisearch": "^7.2.0"
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.example.snipsearch",
+    "productName": "Snipsearch",
+    "files": ["main.js", "preload.js", "selector.html", "panel.html", "assets/**/*", "package.json"],
+    "mac": { "category": "public.app-category.productivity" },
+    "win": { "target": "nsis" },
+    "linux": { "target": "AppImage" }
+  }
+}

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+<title>Select area</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; cursor: crosshair; user-select: none; background: #000; }
+  #shot { position: fixed; inset: 0; width: 100vw; height: 100vh; }
+  #sel {
+    position: fixed; display: none;
+    border: 2px solid #1c2a4a;
+    background: rgba(255, 225, 77, 0.28);
+    box-shadow: 0 0 0 100vmax rgba(20, 28, 48, 0.5);
+  }
+  #hint {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    font: 13px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: #1c2a4a; background: rgba(247, 248, 250, 0.95);
+    padding: 9px 14px; border-radius: 999px; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<img id="shot" alt="" />
+<div id="sel"></div>
+<div id="hint">Drag over the text you want. Esc cancels.</div>
+<script>
+  const shot = document.getElementById('shot');
+  const sel = document.getElementById('sel');
+  const hint = document.getElementById('hint');
+  let fullImg = null;
+  let start = null;
+  let rect = null;
+
+  window.api.onShot((dataUrl) => {
+    fullImg = new Image();
+    fullImg.onload = () => { shot.src = dataUrl; };
+    fullImg.src = dataUrl;
+  });
+
+  function draw(x1, y1, x2, y2) {
+    const x = Math.min(x1, x2), y = Math.min(y1, y2);
+    const w = Math.abs(x2 - x1), h = Math.abs(y2 - y1);
+    rect = { x, y, w, h };
+    Object.assign(sel.style, { display: 'block', left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+  }
+
+  window.addEventListener('mousedown', (e) => {
+    start = { x: e.clientX, y: e.clientY };
+    hint.style.display = 'none';
+    draw(start.x, start.y, start.x, start.y);
+  });
+  window.addEventListener('mousemove', (e) => { if (start) draw(start.x, start.y, e.clientX, e.clientY); });
+
+  window.addEventListener('mouseup', () => {
+    if (!start || !rect || !fullImg) return;
+    start = null;
+    if (rect.w < 8 || rect.h < 8) { sel.style.display = 'none'; hint.style.display = 'block'; return; }
+
+    const sx = fullImg.naturalWidth / window.innerWidth;
+    const sy = fullImg.naturalHeight / window.innerHeight;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(rect.w * sx);
+    canvas.height = Math.round(rect.h * sy);
+    canvas.getContext('2d').drawImage(
+      fullImg,
+      Math.round(rect.x * sx), Math.round(rect.y * sy), canvas.width, canvas.height,
+      0, 0, canvas.width, canvas.height
+    );
+
+    let out = canvas.toDataURL('image/png');
+    // The API rejects images above about 5 MB, so fall back to JPEG for very large regions.
+    if (out.length > 5_000_000) out = canvas.toDataURL('image/jpeg', 0.9);
+    window.api.snipDone(out);
+  });
+
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.api.snipCancel(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1c2a4a" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<title>Snipsearch</title>
+<style>
+  :root {
+    --ink: #1c2a4a; --ink-soft: #55607a; --paper: #f7f8fa; --surface: #fff;
+    --line: rgba(28, 42, 74, 0.16); --highlight: #ffe14d; --danger: #a4262c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--paper); color: var(--ink); }
+  body {
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    min-height: 100vh;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 14px 14px 80px; }
+  h1 { font-size: 20px; margin: 4px 0 12px; }
+  button {
+    font: inherit; color: inherit; border: 1px solid var(--line); background: var(--surface);
+    border-radius: 10px; padding: 11px 14px; min-height: 44px;
+  }
+  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  button:disabled { opacity: 0.5; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+  .tab { border: 0; background: none; border-radius: 0; border-bottom: 3px solid transparent; color: var(--ink-soft); padding: 10px 12px; }
+  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--highlight); font-weight: 600; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+  .row > button { flex: 1 1 140px; }
+  input[type="text"], input[type="password"], input[type="search"], textarea, select {
+    width: 100%; font: inherit; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 10px; padding: 11px;
+  }
+  textarea { min-height: 220px; font: 17px/1.55 Georgia, "Iowan Old Style", serif; resize: vertical; }
+  .preview { max-width: 100%; max-height: 180px; border-radius: 8px; border: 1px solid var(--line); display: block; margin: 8px 0; }
+  .out { white-space: pre-wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-top: 8px; font: 16px/1.55 Georgia, "Iowan Old Style", serif; }
+  .out:empty { display: none; }
+  .status { min-height: 22px; color: var(--ink-soft); font-size: 14px; }
+  .status.error { color: var(--danger); }
+  label.field { display: block; margin: 14px 0 4px; font-weight: 600; }
+  .hint { color: var(--ink-soft); font-size: 13px; }
+  .item { display: flex; gap: 8px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); margin-bottom: 8px; }
+  .item .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .d { color: var(--ink-soft); font-size: 12px; }
+  .sources a { display: block; color: var(--ink); margin-top: 6px; word-break: break-all; }
+  [hidden] { display: none !important; }
+  input[type="file"] { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Snipsearch</h1>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" data-tab="result">Read</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="library">Library</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="settings">Settings</button>
+  </div>
+
+  <section id="result">
+    <div class="row">
+      <button class="primary" id="takePhoto">Take photo</button>
+      <button id="chooseImage">Choose image</button>
+    </div>
+    <input type="file" id="camInput" accept="image/*" capture="environment" />
+    <input type="file" id="fileInput" accept="image/*" />
+    <div class="hint">Photograph a page, or choose a screenshot or image from your phone.</div>
+    <div class="status" id="status" role="status"></div>
+    <img id="preview" class="preview" alt="" hidden />
+    <div id="work" hidden>
+      <textarea id="text" spellcheck="false" aria-label="Extracted text"></textarea>
+      <div class="row">
+        <button id="copy">Copy</button>
+        <button id="summarize">Summarize</button>
+      </div>
+      <div class="out" id="summaryOut"></div>
+      <label class="field" for="question">Ask about this</label>
+      <input type="text" id="question" placeholder="What is the main claim?" />
+      <div class="row">
+        <button class="primary" id="ask">Ask</button>
+        <label><input type="checkbox" id="web" /> Search the web</label>
+      </div>
+      <div class="out" id="answerOut"></div>
+      <div class="sources" id="sources"></div>
+    </div>
+  </section>
+
+  <section id="library" hidden>
+    <input type="search" id="search" placeholder="Search everything you have read" aria-label="Search library" />
+    <div id="list" style="margin-top: 12px"></div>
+  </section>
+
+  <section id="settings" hidden>
+    <label class="field" for="provider">Model provider</label>
+    <select id="provider">
+      <option value="gemini">Google Gemini (free tier available)</option>
+      <option value="claude">Anthropic Claude (paid)</option>
+    </select>
+    <div id="geminiBox">
+      <label class="field" for="geminiKey">Gemini API key</label>
+      <input type="password" id="geminiKey" placeholder="AIza..." autocomplete="off" />
+      <div class="hint" id="geminiState"></div>
+      <div class="hint">Free key: aistudio.google.com/apikey. Free-tier content may be used by Google to improve its products, so avoid private documents.</div>
+    </div>
+    <div id="claudeBox" hidden>
+      <label class="field" for="claudeKey">Anthropic API key</label>
+      <input type="password" id="claudeKey" placeholder="sk-ant-..." autocomplete="off" />
+      <div class="hint" id="claudeState"></div>
+    </div>
+    <label class="field" for="model">Model</label>
+    <input type="text" id="model" />
+    <div class="row"><button class="primary" id="save">Save settings</button></div>
+    <div class="status" id="saveStatus"></div>
+    <p class="hint">Your key stays in this browser on this phone and is sent only to the provider you chose. This setup is for your own testing. A shipped product should call a server that holds the key.</p>
+  </section>
+</div>
+
+<script>
+  const API_URL = 'https://api.anthropic.com/v1/messages';
+  const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+  const DEFAULTS = { provider: 'gemini', geminiModel: 'gemini-2.5-flash', claudeModel: 'claude-sonnet-5-5' };
+  const WEB_SEARCH_TOOL = { type: 'web_search_20250305', name: 'web_search', max_uses: 3 };
+
+  const EXTRACT_SYSTEM =
+    'You are a transcription engine. Transcribe all text visible in the image exactly, in reading order. ' +
+    'Output clean Markdown: keep headings and lists, render tables as Markdown tables, and write math as LaTeX ' +
+    '($...$ inline, $$...$$ for display). Rejoin words hyphenated across line breaks and join lines that belong to ' +
+    'the same paragraph. Fix obvious ligature or encoding artefacts. If part of the image is a figure with no text, ' +
+    'add a one-line description in [square brackets]. Output only the transcription, with no commentary.';
+  const SUMMARY_SYSTEM =
+    'Summarize the user\u2019s text faithfully. Give 3 to 5 short bullet points, then one sentence starting with "Takeaway:". Do not add facts that are not in the text.';
+  const ASK_SYSTEM =
+    'Answer the question using the provided snipped text as the main context. Be concise and direct. If you search the web, say what you found.';
+
+  const $ = (id) => document.getElementById(id);
+  let current = { id: null };
+
+  // ---------- storage (always guarded) ----------
+  const store = {
+    get(key, fallback) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; } },
+    set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage full or blocked */ } },
+  };
+  const getProvider = () => store.get('provider', DEFAULTS.provider);
+  const getGeminiKey = () => store.get('geminiKey', '');
+  const getClaudeKey = () => store.get('claudeKey', '');
+  const getGeminiModel = () => store.get('geminiModel', DEFAULTS.geminiModel);
+  const getClaudeModel = () => store.get('claudeModel', DEFAULTS.claudeModel);
+  const getLibrary = () => store.get('library', []);
+
+  // ---------- ui helpers ----------
+  function setStatus(msg, isError = false) {
+    $('status').textContent = msg || '';
+    $('status').classList.toggle('error', isError);
+  }
+  function showTab(name) {
+    document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
+    ['result', 'library', 'settings'].forEach((s) => { $(s).hidden = s !== name; });
+    if (name === 'library') renderLibrary();
+    if (name === 'settings') renderSettings();
+  }
+  document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
+
+  async function guarded(btn, fn) {
+    btn.disabled = true;
+    try { await fn(); } catch (err) { setStatus(err.message || 'Something went wrong.', true); }
+    finally { btn.disabled = false; }
+  }
+
+  // ---------- Claude API ----------
+  async function callAnthropic({ system, content, webSearch = false, maxTokens = 2500 }) {
+    const apiKey = getClaudeKey();
+    if (!apiKey) { showTab('settings'); throw new Error('Add your Anthropic API key in Settings first.'); }
+    const messages = [{ role: 'user', content }];
+    let text = '';
+    const sources = [];
+    for (let turn = 0; turn < 3; turn++) {
+      const body = { model: getClaudeModel(), max_tokens: maxTokens, system, messages };
+      if (webSearch) body.tools = [WEB_SEARCH_TOOL];
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message || 'API error ' + res.status);
+      for (const b of data.content || []) {
+        if (b.type !== 'text') continue;
+        text += b.text;
+        for (const c of b.citations || []) {
+          if (c.url && !sources.some((s) => s.url === c.url)) sources.push({ url: c.url, title: c.title || c.url });
+        }
+      }
+      if (data.stop_reason === 'pause_turn') { messages.push({ role: 'assistant', content: data.content }); continue; }
+      break;
+    }
+    return { text: text.trim(), sources };
+  }
+
+  async function callGemini({ system, content, webSearch = false, maxTokens = 2500 }) {
+    const key = getGeminiKey();
+    if (!key) { showTab('settings'); throw new Error('Add your Gemini API key in Settings first.'); }
+    // Content arrives in Claude block format; convert to Gemini parts.
+    const blocks = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
+    const parts = blocks.map((b) => b.type === 'image'
+      ? { inlineData: { mimeType: b.source.media_type, data: b.source.data } }
+      : { text: b.text });
+    const body = {
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts }],
+      // Gemini 2.5+ counts thinking tokens against this limit, so leave generous room.
+      generationConfig: { maxOutputTokens: Math.max(maxTokens, 8192) },
+    };
+    if (webSearch) body.tools = [{ google_search: {} }];
+    const res = await fetch(GEMINI_URL + '/' + encodeURIComponent(getGeminiModel()) + ':generateContent', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 429) throw new Error('Free-tier limit reached. Wait a minute and try again.');
+    if (!res.ok) throw new Error(data?.error?.message || 'Gemini error ' + res.status);
+    const cand = data.candidates && data.candidates[0];
+    if (!cand) {
+      const why = data.promptFeedback && data.promptFeedback.blockReason;
+      throw new Error(why ? 'Gemini blocked this request (' + why + ').' : 'Gemini returned no answer.');
+    }
+    const text = ((cand.content && cand.content.parts) || []).filter((p) => p.text && !p.thought).map((p) => p.text).join('').trim();
+    if (!text) throw new Error(cand.finishReason === 'MAX_TOKENS' ? 'The model ran out of output space. Try a smaller image.' : 'Gemini returned an empty answer.');
+    const sources = [];
+    for (const ch of (cand.groundingMetadata && cand.groundingMetadata.groundingChunks) || []) {
+      const w = ch.web;
+      if (w && w.uri && !sources.some((x) => x.url === w.uri)) sources.push({ url: w.uri, title: w.title || w.uri });
+    }
+    return { text, sources };
+  }
+
+  function callModel(opts) { return getProvider() === 'claude' ? callAnthropic(opts) : callGemini(opts); }
+
+  // Phone photos are huge. Shrink to keep requests fast and under the API image limit.
+  function fileToJpeg(file, maxSide = 1800) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.naturalWidth * scale);
+        canvas.height = Math.round(img.naturalHeight * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', 0.88));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not open that image.')); };
+      img.src = url;
+    });
+  }
+
+  // ---------- reading an image ----------
+  async function handleFile(file) {
+    if (!file) return;
+    setStatus('Reading the image...');
+    $('work').hidden = true;
+    try {
+      const dataUrl = await fileToJpeg(file);
+      $('preview').src = dataUrl; $('preview').hidden = false;
+      const { text } = await callModel({
+        system: EXTRACT_SYSTEM,
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: dataUrl.split(',')[1] } },
+          { type: 'text', text: 'Transcribe this.' },
+        ],
+        maxTokens: 4000,
+      });
+      const entry = addToLibrary(text);
+      showResult(entry);
+      let copied = false;
+      try { await navigator.clipboard.writeText(text); copied = true; } catch { /* needs a user gesture on some browsers */ }
+      setStatus(copied ? 'Done. Text copied.' : 'Done. Tap Copy to copy the text.');
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  }
+  $('takePhoto').addEventListener('click', () => $('camInput').click());
+  $('chooseImage').addEventListener('click', () => $('fileInput').click());
+  for (const id of ['camInput', 'fileInput']) {
+    $(id).addEventListener('change', (e) => { handleFile(e.target.files[0]); e.target.value = ''; });
+  }
+
+  function showResult(entry) {
+    current = { id: entry.id };
+    $('work').hidden = false;
+    $('text').value = entry.text;
+    $('summaryOut').textContent = entry.summary || '';
+    $('answerOut').textContent = '';
+    $('sources').innerHTML = '';
+  }
+
+  // ---------- actions ----------
+  $('copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText($('text').value); setStatus('Copied.'); }
+    catch { $('text').select(); setStatus('Select all and copy manually.'); }
+  });
+
+  $('summarize').addEventListener('click', () => guarded($('summarize'), async () => {
+    setStatus('Summarizing...');
+    const { text } = await callModel({ system: SUMMARY_SYSTEM, content: $('text').value, maxTokens: 800 });
+    $('summaryOut').textContent = text;
+    const lib = getLibrary();
+    const e = lib.find((x) => x.id === current.id);
+    if (e) { e.summary = text; store.set('library', lib); }
+    setStatus('');
+  }));
+
+  async function ask() {
+    const question = $('question').value.trim();
+    if (!question) return;
+    await guarded($('ask'), async () => {
+      setStatus($('web').checked ? 'Searching the web...' : 'Thinking...');
+      const { text, sources } = await callModel({
+        system: ASK_SYSTEM,
+        content: 'Snipped text:\n"""\n' + $('text').value + '\n"""\n\nQuestion: ' + question,
+        webSearch: $('web').checked,
+        maxTokens: 1500,
+      });
+      $('answerOut').textContent = text;
+      $('sources').innerHTML = '';
+      for (const s of sources) {
+        const a = document.createElement('a');
+        a.textContent = s.title; a.href = s.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        $('sources').appendChild(a);
+      }
+      setStatus('');
+    });
+  }
+  $('ask').addEventListener('click', ask);
+  $('question').addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
+
+  // ---------- library (local to this phone) ----------
+  function addToLibrary(text) {
+    const entry = {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      ts: Date.now(),
+      title: text.replace(/\s+/g, ' ').trim().slice(0, 70) || '(empty)',
+      text, summary: '',
+    };
+    const lib = getLibrary();
+    lib.unshift(entry);
+    store.set('library', lib.slice(0, 200));
+    return entry;
+  }
+  function renderLibrary() {
+    const q = $('search').value.trim().toLowerCase();
+    const tokens = q.split(/\s+/).filter(Boolean);
+    const items = getLibrary().filter((e) => {
+      const hay = (e.title + ' ' + e.text).toLowerCase();
+      return tokens.every((t) => hay.includes(t));
+    });
+    const list = $('list');
+    list.innerHTML = '';
+    if (!items.length) {
+      const d = document.createElement('div');
+      d.className = 'hint';
+      d.textContent = q ? 'No results for that search.' : 'Nothing here yet. Everything you read is saved here and searchable.';
+      list.appendChild(d);
+      return;
+    }
+    for (const it of items) {
+      const row = document.createElement('div');
+      row.className = 'item';
+      const open = document.createElement('button');
+      open.className = 't';
+      open.style.cssText = 'flex:1;text-align:left;border:0;background:none;padding:6px;min-height:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      open.textContent = it.title;
+      open.addEventListener('click', () => { showResult(it); setStatus(''); showTab('result'); });
+      const d = document.createElement('span');
+      d.className = 'd';
+      d.textContent = new Date(it.ts).toLocaleDateString();
+      const del = document.createElement('button');
+      del.textContent = 'Delete';
+      del.addEventListener('click', () => { store.set('library', getLibrary().filter((x) => x.id !== it.id)); renderLibrary(); });
+      row.append(open, d, del);
+      list.appendChild(row);
+    }
+  }
+  $('search').addEventListener('input', renderLibrary);
+
+  // ---------- settings ----------
+  const draft = {};
+  function paintProvider() {
+    const p = $('provider').value;
+    $('geminiBox').hidden = p !== 'gemini';
+    $('claudeBox').hidden = p !== 'claude';
+    $('model').value = draft[p + 'Model'];
+  }
+  $('provider').addEventListener('change', () => {
+    const leaving = $('provider').value === 'gemini' ? 'claude' : 'gemini';
+    draft[leaving + 'Model'] = $('model').value;
+    paintProvider();
+  });
+  function renderSettings() {
+    draft.geminiModel = getGeminiModel();
+    draft.claudeModel = getClaudeModel();
+    $('provider').value = getProvider();
+    $('geminiState').textContent = getGeminiKey() ? 'A key is saved on this phone. Paste a new one only to replace it.' : 'No key saved yet.';
+    $('claudeState').textContent = getClaudeKey() ? 'A key is saved on this phone. Paste a new one only to replace it.' : 'No key saved yet.';
+    paintProvider();
+  }
+  $('save').addEventListener('click', () => {
+    const p = $('provider').value;
+    draft[p + 'Model'] = $('model').value;
+    store.set('provider', p);
+    if ($('geminiKey').value.trim()) store.set('geminiKey', $('geminiKey').value.trim());
+    if ($('claudeKey').value.trim()) store.set('claudeKey', $('claudeKey').value.trim());
+    if (draft.geminiModel.trim()) store.set('geminiModel', draft.geminiModel.trim());
+    if (draft.claudeModel.trim()) store.set('claudeModel', draft.claudeModel.trim());
+    $('geminiKey').value = '';
+    $('claudeKey').value = '';
+    $('saveStatus').textContent = 'Saved.';
+    renderSettings();
+  });
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if (!(getProvider() === 'gemini' ? getGeminiKey() : getClaudeKey())) showTab('settings');
+</script>
+</body>
+</html>

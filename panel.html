@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+<title>Snipsearch</title>
+<style>
+  :root {
+    --ink: #1c2a4a;
+    --ink-soft: #55607a;
+    --paper: rgba(247, 248, 250, 0.94);
+    --surface: #ffffff;
+    --line: rgba(28, 42, 74, 0.14);
+    --highlight: #ffe14d;
+    --danger: #a4262c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: transparent; }
+  body {
+    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink);
+  }
+  .shell {
+    height: 100%; display: flex; flex-direction: column;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+    backdrop-filter: blur(18px); overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+    border-bottom: 1px solid var(--line); -webkit-app-region: drag;
+  }
+  header .name { font-weight: 650; letter-spacing: 0.01em; flex: 1; }
+  header button, header .tabs { -webkit-app-region: no-drag; }
+  button {
+    font: inherit; color: inherit; cursor: pointer;
+    border: 1px solid var(--line); background: var(--surface);
+    border-radius: 7px; padding: 6px 10px;
+  }
+  button:hover { border-color: var(--ink); }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  button.primary:hover { background: #26386a; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .tabs { display: flex; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+  .tab { border: 0; background: none; border-radius: 0; padding: 9px 10px; color: var(--ink-soft); border-bottom: 3px solid transparent; }
+  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--highlight); font-weight: 600; }
+  main { flex: 1; overflow: auto; padding: 12px; }
+  section[hidden] { display: none; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+  .preview { max-height: 120px; max-width: 100%; border: 1px solid var(--line); border-radius: 6px; display: block; margin-bottom: 8px; }
+  textarea, input[type="text"], input[type="password"], select {
+    width: 100%; font: inherit; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 7px; padding: 8px;
+  }
+  textarea.text { min-height: 190px; resize: vertical; font: 14px/1.55 Georgia, "Iowan Old Style", "Times New Roman", serif; }
+  .out { white-space: pre-wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 10px; margin-top: 8px; font: 14px/1.55 Georgia, "Iowan Old Style", serif; }
+  .out:empty { display: none; }
+  .sources a { color: var(--ink); display: block; margin-top: 4px; word-break: break-all; }
+  .status { font-size: 12px; color: var(--ink-soft); min-height: 16px; }
+  .status.error { color: var(--danger); }
+  mark { background: var(--highlight); color: inherit; }
+  .empty { color: var(--ink-soft); padding: 18px 4px; }
+  .item { display: flex; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); margin-bottom: 6px; cursor: pointer; }
+  .item:hover { border-color: var(--ink); }
+  .item .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .d { color: var(--ink-soft); font-size: 11px; }
+  label.field { display: block; margin: 10px 0 4px; font-weight: 600; }
+  .hint { color: var(--ink-soft); font-size: 12px; margin-top: 4px; }
+  .drop { border: 2px dashed var(--line); border-radius: 10px; padding: 14px; text-align: center; color: var(--ink-soft); }
+  .drop.over { border-color: var(--ink); background: rgba(255, 225, 77, 0.2); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <span class="name">Snipsearch</span>
+    <button class="primary" id="snip">New snip</button>
+    <button id="close" aria-label="Hide panel">Hide</button>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" data-tab="result">Result</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="library">Library</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="settings">Settings</button>
+  </div>
+
+  <main>
+    <!-- RESULT -->
+    <section id="result">
+      <div class="status" id="status"></div>
+      <img id="preview" class="preview" alt="" hidden />
+      <div id="empty" class="drop">
+        Press <b id="hotkeyLabel">Ctrl+Alt+X</b> and drag over any text on your screen.<br />
+        You can also drop an image here.
+      </div>
+      <div id="work" hidden>
+        <textarea id="text" class="text" spellcheck="false" aria-label="Extracted text"></textarea>
+        <div class="row">
+          <button id="copy">Copy</button>
+          <button id="summarize">Summarize</button>
+        </div>
+        <div class="out" id="summaryOut"></div>
+
+        <label class="field" for="question">Ask about this</label>
+        <input type="text" id="question" placeholder="What does this mean? What is the main claim?" />
+        <div class="row">
+          <button id="ask" class="primary">Ask</button>
+          <label><input type="checkbox" id="web" /> Search the web</label>
+        </div>
+        <div class="out" id="answerOut"></div>
+        <div class="sources" id="sources"></div>
+      </div>
+    </section>
+
+    <!-- LIBRARY -->
+    <section id="library" hidden>
+      <input type="text" id="search" placeholder="Search everything you have snipped" aria-label="Search library" />
+      <div id="list" style="margin-top: 10px"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="settings" hidden>
+      <label class="field" for="provider">Model provider</label>
+      <select id="provider">
+        <option value="gemini">Google Gemini (free tier available)</option>
+        <option value="claude">Anthropic Claude (paid)</option>
+      </select>
+      <div id="geminiBox">
+        <label class="field" for="geminiKey">Gemini API key</label>
+        <input type="password" id="geminiKey" placeholder="AIza..." autocomplete="off" />
+        <div class="hint" id="geminiState"></div>
+        <div class="hint">Free key: aistudio.google.com/apikey. Free-tier content may be used by Google to improve its products, so avoid private documents.</div>
+      </div>
+      <div id="claudeBox" hidden>
+        <label class="field" for="claudeKey">Anthropic API key</label>
+        <input type="password" id="claudeKey" placeholder="sk-ant-..." autocomplete="off" />
+        <div class="hint" id="claudeState"></div>
+      </div>
+      <label class="field" for="model">Model</label>
+      <input type="text" id="model" />
+      <div class="row"><button class="primary" id="save">Save settings</button></div>
+      <div class="status" id="saveStatus"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let current = { id: null, text: '' };
+
+  function setStatus(msg, isError = false) {
+    const el = $('status');
+    el.textContent = msg || '';
+    el.classList.toggle('error', isError);
+  }
+
+  // ---------- Tabs ----------
+  document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
+  function showTab(name) {
+    document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
+    ['result', 'library', 'settings'].forEach((s) => { $(s).hidden = s !== name; });
+    if (name === 'library') loadLibrary($('search').value);
+    if (name === 'settings') loadSettings();
+  }
+
+  // ---------- Header buttons ----------
+  $('snip').addEventListener('click', () => window.api.startSnip());
+  $('close').addEventListener('click', () => window.api.hidePanel());
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.api.hidePanel(); });
+
+  // ---------- Showing a result ----------
+  function showResult({ id, text, preview }) {
+    current = { id, text };
+    if (preview) { $('preview').src = preview; $('preview').hidden = false; }
+    $('empty').hidden = true;
+    $('work').hidden = false;
+    $('text').value = text;
+    $('summaryOut').textContent = '';
+    $('answerOut').textContent = '';
+    $('sources').innerHTML = '';
+  }
+
+  window.api.onJobStart(({ preview }) => {
+    showTab('result');
+    $('preview').src = preview; $('preview').hidden = false;
+    $('empty').hidden = true;
+    $('work').hidden = true;
+    setStatus('Reading the snip...');
+  });
+  window.api.onJobDone(({ id, text, copied }) => {
+    showResult({ id, text });
+    setStatus(copied ? 'Done. Text copied to your clipboard.' : 'Done.');
+  });
+  window.api.onJobError((msg) => { showTab('result'); setStatus(msg, true); });
+
+  // ---------- Actions ----------
+  $('text').addEventListener('input', () => { current.text = $('text').value; });
+
+  $('copy').addEventListener('click', async () => {
+    await window.api.copy($('text').value);
+    setStatus('Copied.');
+  });
+
+  async function guarded(btn, fn) {
+    btn.disabled = true;
+    try { await fn(); } catch (err) { setStatus(err.message.replace(/^Error invoking remote method '[^']+': Error: /, ''), true); }
+    finally { btn.disabled = false; }
+  }
+
+  $('summarize').addEventListener('click', () => guarded($('summarize'), async () => {
+    setStatus('Summarizing...');
+    $('summaryOut').textContent = await window.api.summarize({ id: current.id, text: $('text').value });
+    setStatus('');
+  }));
+
+  async function ask() {
+    const question = $('question').value.trim();
+    if (!question) return;
+    await guarded($('ask'), async () => {
+      setStatus($('web').checked ? 'Searching the web...' : 'Thinking...');
+      const { text, sources } = await window.api.ask({ text: $('text').value, question, web: $('web').checked });
+      $('answerOut').textContent = text;
+      $('sources').innerHTML = '';
+      for (const s of sources) {
+        const a = document.createElement('a');
+        a.textContent = s.title;
+        a.href = s.url;
+        a.addEventListener('click', (e) => e.preventDefault());
+        a.title = s.url;
+        $('sources').appendChild(a);
+      }
+      setStatus('');
+    });
+  }
+  $('ask').addEventListener('click', ask);
+  $('question').addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
+
+  // ---------- Drop an image ----------
+  ['dragover', 'dragenter'].forEach((ev) => window.addEventListener(ev, (e) => { e.preventDefault(); $('empty').classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) => window.addEventListener(ev, () => $('empty').classList.remove('over')));
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith('image/'));
+    if (!file) { setStatus('Drop an image file (PNG, JPG, WebP).', true); return; }
+    const reader = new FileReader();
+    reader.onload = () => window.api.extractImage(reader.result);
+    reader.readAsDataURL(file);
+  });
+
+  // ---------- Library ----------
+  let searchTimer;
+  $('search').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => loadLibrary($('search').value), 150);
+  });
+
+  async function loadLibrary(q) {
+    const items = await window.api.searchLibrary(q || '');
+    const list = $('list');
+    list.innerHTML = '';
+    if (!items.length) {
+      const d = document.createElement('div');
+      d.className = 'empty';
+      d.textContent = q ? 'No snips match that search.' : 'Nothing here yet. Your snips will be saved here and become searchable.';
+      list.appendChild(d);
+      return;
+    }
+    for (const it of items) {
+      const row = document.createElement('div');
+      row.className = 'item';
+      row.tabIndex = 0;
+      const t = document.createElement('div');
+      t.className = 't';
+      t.textContent = it.title;
+      const d = document.createElement('div');
+      d.className = 'd';
+      d.textContent = new Date(it.ts).toLocaleDateString();
+      const del = document.createElement('button');
+      del.textContent = 'Delete';
+      del.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await window.api.deleteEntry(it.id);
+        loadLibrary($('search').value);
+      });
+      const open = async () => {
+        const full = await window.api.getEntry(it.id);
+        if (!full) return;
+        showResult({ id: full.id, text: full.text });
+        $('summaryOut').textContent = full.summary || '';
+        setStatus('');
+        showTab('result');
+      };
+      row.addEventListener('click', open);
+      row.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
+      row.append(t, d, del);
+      list.appendChild(row);
+    }
+  }
+
+  // ---------- Settings ----------
+  let cfg = null;
+  function paintProvider() {
+    const p = $('provider').value;
+    $('geminiBox').hidden = p !== 'gemini';
+    $('claudeBox').hidden = p !== 'claude';
+    $('model').value = p === 'gemini' ? cfg.geminiModel : cfg.claudeModel;
+  }
+  $('provider').addEventListener('change', () => {
+    // keep what was typed for the provider we are leaving
+    const leaving = $('provider').value === 'gemini' ? 'claude' : 'gemini';
+    cfg[leaving + 'Model'] = $('model').value;
+    paintProvider();
+  });
+  async function loadSettings() {
+    cfg = await window.api.getSettings();
+    $('provider').value = cfg.provider;
+    $('geminiState').textContent = cfg.hasGeminiKey ? 'A key is saved. Paste a new one only to replace it.' : 'No key saved yet.';
+    $('claudeState').textContent = cfg.hasClaudeKey ? 'A key is saved. Paste a new one only to replace it.' : 'No key saved yet.';
+    paintProvider();
+  }
+  $('save').addEventListener('click', async () => {
+    const p = $('provider').value;
+    await window.api.setSettings({
+      provider: p,
+      geminiKey: $('geminiKey').value,
+      claudeKey: $('claudeKey').value,
+      geminiModel: p === 'gemini' ? $('model').value : cfg.geminiModel,
+      claudeModel: p === 'claude' ? $('model').value : cfg.claudeModel,
+    });
+    $('geminiKey').value = '';
+    $('claudeKey').value = '';
+    $('saveStatus').textContent = 'Saved.';
+    loadSettings();
+  });
+
+  (async () => {
+    const s = await window.api.getSettings();
+    $('hotkeyLabel').textContent = s.snipHotkey.replace('CommandOrControl', 'Ctrl/Cmd');
+    const hasKey = s.provider === 'gemini' ? s.hasGeminiKey : s.hasClaudeKey;
+    if (!hasKey) showTab('settings');
+  })();
+</script>
+</body>
+</html>
